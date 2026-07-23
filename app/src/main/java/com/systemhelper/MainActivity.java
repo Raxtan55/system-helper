@@ -335,7 +335,7 @@ public class MainActivity extends Activity {
 
         progress.setVisibility(View.GONE);
 
-        if (root && overlay && game) {
+        if (root && overlay) {
             statusText.setText("Hazır — Başlatılabilir");
             statusText.setTextColor(Color.parseColor("#10B981"));
             startBtn.setEnabled(true);
@@ -343,13 +343,9 @@ public class MainActivity extends Activity {
         } else if (!root) {
             statusText.setText("Root erişimi gerekli");
             statusText.setTextColor(Color.parseColor("#EF4444"));
-        } else if (!overlay) {
+        } else {
             statusText.setText("Overlay izni gerekli");
             statusText.setTextColor(Color.parseColor("#F59E0B"));
-        } else {
-            statusText.setText("Among Us bekleniyor...");
-            statusText.setTextColor(Color.parseColor("#F59E0B"));
-            waitForGame();
         }
     }
 
@@ -379,7 +375,7 @@ public class MainActivity extends Activity {
 
     private boolean isGameRunning() {
         try {
-            Process p = Runtime.getRuntime().exec("pidof com.innersloth.spacemafia");
+            Process p = Runtime.getRuntime().exec("su -c pidof com.innersloth.spacemafia");
             byte[] buf = new byte[128];
             int len = p.getInputStream().read(buf);
             p.waitFor();
@@ -389,7 +385,7 @@ public class MainActivity extends Activity {
 
     private int getPid() {
         try {
-            Process p = Runtime.getRuntime().exec("pidof com.innersloth.spacemafia");
+            Process p = Runtime.getRuntime().exec("su -c pidof com.innersloth.spacemafia");
             byte[] buf = new byte[128];
             int len = p.getInputStream().read(buf);
             p.waitFor();
@@ -408,11 +404,6 @@ public class MainActivity extends Activity {
         }
         if (!hasRoot()) {
             addLog("Root erişimi yok");
-            return;
-        }
-        if (!isGameRunning()) {
-            addLog("Oyun açık değil — bekleniyor...");
-            waitForGame();
             return;
         }
         launch();
