@@ -373,12 +373,17 @@ public class OverlayService extends Service {
     private void updateList() {
         listContainer.removeAllViews();
 
-        if (!NativeHelper.isGameRunning()) {
+        boolean running = NativeHelper.isGameRunning();
+        log("updateList isGameRunning=" + running);
+
+        if (!running) {
             addEmpty("Oyun çalışmıyor");
             return;
         }
 
         NativeHelper.PlayerInfo[] players = NativeHelper.getPlayerList();
+        log("getPlayerList returned=" + (players == null ? "null" : String.valueOf(players.length)));
+
         if (players == null || players.length == 0) {
             addEmpty("Oyuncu bulunamadı");
             return;
