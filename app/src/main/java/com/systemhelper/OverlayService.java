@@ -38,11 +38,17 @@ public class OverlayService extends Service {
             handler = new Handler(Looper.getMainLooper());
             antiBan = new AntiBan(this);
             startForeground(1, buildNotif());
-            createFab();
+            if (android.provider.Settings.canDrawOverlays(this)) {
+                createFab();
+            }
         } catch (Exception e) {
             e.printStackTrace();
-            stopSelf();
         }
+    }
+
+    @Override
+    public int onStartCommand(Intent intent, int flags, int startId) {
+        return START_STICKY;
     }
 
     private Notification buildNotif() {

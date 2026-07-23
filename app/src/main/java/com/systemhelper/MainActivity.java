@@ -411,6 +411,12 @@ public class MainActivity extends Activity {
 
     private void launch() {
         try {
+            if (!Settings.canDrawOverlays(this)) {
+                addLog("Overlay izni gerekli!");
+                autoRequestOverlay();
+                return;
+            }
+
             addLog("Servis başlatılıyor...");
 
             Intent svc = new Intent(this, OverlayService.class);
