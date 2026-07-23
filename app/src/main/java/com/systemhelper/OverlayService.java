@@ -34,14 +34,16 @@ public class OverlayService extends Service {
     @Override
     public void onCreate() {
         super.onCreate();
+        android.util.Log.d("Voyage", "onCreate basladi");
         try {
             handler = new Handler(Looper.getMainLooper());
             antiBan = new AntiBan(this);
             startForeground(1, buildNotif());
-            if (android.provider.Settings.canDrawOverlays(this)) {
-                createFab();
-            }
+            android.util.Log.d("Voyage", "canDrawOverlays: " + android.provider.Settings.canDrawOverlays(this));
+            createFab();
+            android.util.Log.d("Voyage", "createFab tamamlandi");
         } catch (Exception e) {
+            android.util.Log.e("Voyage", "Hata: " + e.getMessage(), e);
             e.printStackTrace();
         }
     }
