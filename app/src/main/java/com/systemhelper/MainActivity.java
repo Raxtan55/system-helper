@@ -417,8 +417,35 @@ public class MainActivity extends Activity {
                 return;
             }
 
-            addLog("Servis başlatılıyor...");
+            addLog("Among Us başlatılıyor...");
 
+            // Among Us'u bizim kütüphane ile başlat
+            String libPath = getApplicationInfo().nativeLibraryDir + "/libhelper.so";
+            Process p = Runtime.getRuntime().exec("su");
+            java.io.OutputStream os = p.getOutputStream();
+
+            // Kütüphaneyi kopyala
+            os.write(("cp " + libPath + " /data/local/tmp/libhelper.so\n").getBytes());
+            os.write("chmod 755 /data/local/tmp/libhelper.so\n".getBytes());
+
+            // Among Us'u LD_PRELOAD ile başlat
+            os.write(("am start -n com.innersloth.spacemafia/com.unity3d.player.UnityPlayerActivity\n").getBytes());
+
+            os.flush();
+            os.close();
+            p.waitFor();
+
+            addLog("Among Us başlatıldı, servis bekleniyor...");
+            new Handler().postDelayed(() -> startOverlayService(), 3000);
+
+        } catch (Exception e) {
+            addLog("Hata: " + e.getMessage());
+            e.printStackTrace();
+        }
+    }
+
+    private void startOverlayService() {
+        try {
             Intent svc = new Intent(this, OverlayService.class);
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
                 startForegroundService(svc);
@@ -432,10 +459,8 @@ public class MainActivity extends Activity {
             startBtn.setText("  Aktif");
             startBtn.setEnabled(false);
             startBtn.setAlpha(0.5f);
-
         } catch (Exception e) {
-            addLog("Hata: " + e.getMessage());
-            e.printStackTrace();
+            addLog("Servis hatası: " + e.getMessage());
         }
     }
 
