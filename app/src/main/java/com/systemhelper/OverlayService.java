@@ -381,15 +381,20 @@ public class OverlayService extends Service {
             return;
         }
 
-        NativeHelper.PlayerInfo[] players = NativeHelper.getPlayerList();
-        log("getPlayerList returned=" + (players == null ? "null" : String.valueOf(players.length)));
+        try {
+            NativeHelper.PlayerInfo[] players = NativeHelper.getPlayerList();
+            log("getPlayerList returned=" + (players == null ? "null" : String.valueOf(players.length)));
 
-        if (players == null || players.length == 0) {
-            addEmpty("Oyuncu bulunamadı");
-            return;
+            if (players == null || players.length == 0) {
+                addEmpty("Oyuncu bulunamadı");
+                return;
+            }
+
+            for (NativeHelper.PlayerInfo pl : players) addPlayer(pl);
+        } catch (Exception e) {
+            log("updateList HATA: " + e.getMessage());
+            addEmpty("Hata: " + e.getMessage());
         }
-
-        for (NativeHelper.PlayerInfo pl : players) addPlayer(pl);
     }
 
     private void addEmpty(String msg) {
