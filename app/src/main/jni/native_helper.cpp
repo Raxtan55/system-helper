@@ -1,12 +1,22 @@
 #include <jni.h>
 #include <string>
 #include <cstring>
+#include <vector>
+#include <fstream>
 #include <android/log.h>
 
 #define LOG_TAG "Helper"
 #define LOGD(...) __android_log_print(ANDROID_LOG_DEBUG, LOG_TAG, __VA_ARGS__)
 
 static uintptr_t base = 0;
+static int gamePid = 0;
+
+struct MemRegion {
+    uintptr_t start, end;
+    bool readable;
+};
+
+static std::vector<MemRegion> regions;
 
 template<typename T>
 T read(uintptr_t addr) {
@@ -40,24 +50,39 @@ const char* cName(int id) {
     }
 }
 
-// Among Us offsetleri (dump.cs'den)
-namespace Off {
-    // PlayerControl field offsets
-    constexpr uintptr_t PlayerId = 0x35;
-    constexpr uintptr_t Data = 0x38;  // NetworkedPlayerInfo
+bool canRead(uintptr_t addr) {
+    for (auto& r : regions) {
+        if (addr >= r.start && addr < r.end && r.readable) return true;
+    }
+    return false;
+}
 
-    // NetworkedPlayerInfo field offsets
-    constexpr uintptr_t PlayerName = 0x40;  // string
-    constexpr uintptr_t RoleType = 0x50;    // int
-    constexpr uintptr_t IsDead = 0x78;      // bool
-    constexpr uintptr_t DefaultOutfit = 0x20; // PlayerOutfit
+bool loadMaps() {
+    char path[64];
+    snprintf(path, sizeof(path), "/proc/%d/maps", gamePid);
+    std::ifstream f(path);
+    if (!f.is_open()) return false;
 
-    // PlayerOutfit field offsets
-    constexpr uintptr_t ColorId = 0x10;     // int
+    regions.clear();
+    std::string line;
+    while (std::getline(f, line)) {
+        uintptr_t s, e;
+        char p[5];
+        if (sscanf(line.c_str(), "%lx-%lx %4s", &s, &e, p) == 3) {
+            regions.push_back({s, e, p[0] == 'r'});
+        }
+    }
+    LOGD("maps: %zu regions", regions.size());
+    return true;
+}
 
-    // Static field offsets (from class start)
-    constexpr uintptr_t LocalPlayer = 0x0;
-    constexpr uintptr_t AllPlayerControls = 0x8;
+uintptr_t findPattern(uintptr_t start, size_t size, const uint8_t* pat, size_t patLen) {
+    for (uintptr_t addr = start; addr < start + size - patLen; addr++) {
+        if (memcmp(reinterpret_cast<void*>(addr), pat, patLen) == 0) {
+            return addr;
+        }
+    }
+    return 0;
 }
 
 extern "C" {
@@ -66,6 +91,18 @@ JNIEXPORT jboolean JNICALL
 Java_com_systemhelper_NativeHelper_init(JNIEnv* env, jclass, jlong addr) {
     base = (uintptr_t)addr;
     LOGD("init base=%p", (void*)base);
+
+    // PID bul
+    FILE* pipe = popen("pidof com.innersloth.spacemafia", "r");
+    if (pipe) {
+        char buf[64];
+        if (fgets(buf, sizeof(buf), pipe)) {
+            gamePid = atoi(buf);
+            LOGD("pid=%d", gamePid);
+            loadMaps();
+        }
+        pclose(pipe);
+    }
     return base != 0;
 }
 
@@ -76,23 +113,37 @@ Java_com_systemhelper_NativeHelper_isGameRunning(JNIEnv*, jclass) {
 
 JNIEXPORT jobjectArray JNICALL
 Java_com_systemhelper_NativeHelper_getPlayerList(JNIEnv* env, jclass) {
-    LOGD("getPlayerList called, base=%p", (void*)base);
     if (!base) return nullptr;
 
     jclass cls = env->FindClass("com/systemhelper/NativeHelper$PlayerInfo");
 
-    // AllPlayerControls static field'ini oku
-    // Static field'lar class'in baslangic adresinde saklanir
-    // Il2CppClass yapisi: +0x0 klass, +0x8 monitor, ... +0xB8 static_fields
-    uintptr_t playerControlClassAddr = base + 0x4913B28;  // PlayerControl class metadata offset
-    uintptr_t staticFields = read<uintptr_t>(playerControlClassAddr + 0xB8);
+    // PlayerControl_StaticFields offseti: 0xB8
+    // PlayerControl class metadata: base + 0x4913B28 (dump'tan)
+    uintptr_t classAddr = base + 0x4913B28;
+
+    if (!canRead(classAddr)) {
+        LOGD("classAddr not readable: %p", (void*)classAddr);
+        // Test dondur
+        jobjectArray arr = env->NewObjectArray(1, cls, nullptr);
+        jobject obj = env->AllocObject(cls);
+        env->SetObjectField(obj, env->GetFieldID(cls, "name", "Ljava/lang/String;"), env->NewStringUTF("Test"));
+        env->SetObjectField(obj, env->GetFieldID(cls, "colorName", "Ljava/lang/String;"), env->NewStringUTF("Mavi"));
+        env->SetIntField(obj, env->GetFieldID(cls, "role", "I"), 0);
+        env->SetBooleanField(obj, env->GetFieldID(cls, "isDead", "Z"), JNI_FALSE);
+        env->SetBooleanField(obj, env->GetFieldID(cls, "isImpostor", "Z"), JNI_FALSE);
+        env->SetObjectArrayElement(arr, 0, obj);
+        return arr;
+    }
+
+    // static_fields pointer
+    uintptr_t staticFields = read<uintptr_t>(classAddr + 0xB8);
     LOGD("staticFields=%p", (void*)staticFields);
 
-    if (!staticFields) {
-        LOGD("staticFields null, returning test");
+    if (!staticFields || !canRead(staticFields)) {
+        LOGD("staticFields not readable");
         jobjectArray arr = env->NewObjectArray(1, cls, nullptr);
         jobject obj = env->AllocObject(cls);
-        env->SetObjectField(obj, env->GetFieldID(cls, "name", "Ljava/lang/String;"), env->NewStringUTF("Test Player"));
+        env->SetObjectField(obj, env->GetFieldID(cls, "name", "Ljava/lang/String;"), env->NewStringUTF("Test"));
         env->SetObjectField(obj, env->GetFieldID(cls, "colorName", "Ljava/lang/String;"), env->NewStringUTF("Mavi"));
         env->SetIntField(obj, env->GetFieldID(cls, "role", "I"), 0);
         env->SetBooleanField(obj, env->GetFieldID(cls, "isDead", "Z"), JNI_FALSE);
@@ -101,15 +152,15 @@ Java_com_systemhelper_NativeHelper_getPlayerList(JNIEnv* env, jclass) {
         return arr;
     }
 
-    // AllPlayerControls List<PlayerControl>
-    uintptr_t allPlayersList = read<uintptr_t>(staticFields + Off::AllPlayerControls);
-    LOGD("allPlayersList=%p", (void*)allPlayersList);
+    // AllPlayerControls (offset 0x8 in StaticFields)
+    uintptr_t allPlayers = read<uintptr_t>(staticFields + 0x8);
+    LOGD("allPlayers=%p", (void*)allPlayers);
 
-    if (!allPlayersList) {
-        LOGD("allPlayersList null, returning test");
+    if (!allPlayers || !canRead(allPlayers)) {
+        LOGD("allPlayers not readable");
         jobjectArray arr = env->NewObjectArray(1, cls, nullptr);
         jobject obj = env->AllocObject(cls);
-        env->SetObjectField(obj, env->GetFieldID(cls, "name", "Ljava/lang/String;"), env->NewStringUTF("Test Player"));
+        env->SetObjectField(obj, env->GetFieldID(cls, "name", "Ljava/lang/String;"), env->NewStringUTF("Test"));
         env->SetObjectField(obj, env->GetFieldID(cls, "colorName", "Ljava/lang/String;"), env->NewStringUTF("Mavi"));
         env->SetIntField(obj, env->GetFieldID(cls, "role", "I"), 0);
         env->SetBooleanField(obj, env->GetFieldID(cls, "isDead", "Z"), JNI_FALSE);
@@ -118,16 +169,16 @@ Java_com_systemhelper_NativeHelper_getPlayerList(JNIEnv* env, jclass) {
         return arr;
     }
 
-    // List._items ve List._size
-    uintptr_t items = read<uintptr_t>(allPlayersList + 0x10);
-    int count = read<int32_t>(allPlayersList + 0x18);
-    LOGD("list items=%p count=%d", (void*)items, count);
+    // List._items (0x10), List._size (0x18)
+    uintptr_t items = read<uintptr_t>(allPlayers + 0x10);
+    int count = read<int32_t>(allPlayers + 0x18);
+    LOGD("items=%p count=%d", (void*)items, count);
 
-    if (!items || count <= 0 || count > 15) {
-        LOGD("invalid list, returning test");
+    if (!items || count <= 0 || count > 15 || !canRead(items)) {
+        LOGD("invalid list");
         jobjectArray arr = env->NewObjectArray(1, cls, nullptr);
         jobject obj = env->AllocObject(cls);
-        env->SetObjectField(obj, env->GetFieldID(cls, "name", "Ljava/lang/String;"), env->NewStringUTF("Test Player"));
+        env->SetObjectField(obj, env->GetFieldID(cls, "name", "Ljava/lang/String;"), env->NewStringUTF("Test"));
         env->SetObjectField(obj, env->GetFieldID(cls, "colorName", "Ljava/lang/String;"), env->NewStringUTF("Mavi"));
         env->SetIntField(obj, env->GetFieldID(cls, "role", "I"), 0);
         env->SetBooleanField(obj, env->GetFieldID(cls, "isDead", "Z"), JNI_FALSE);
@@ -140,27 +191,27 @@ Java_com_systemhelper_NativeHelper_getPlayerList(JNIEnv* env, jclass) {
 
     for (int i = 0; i < count; i++) {
         uintptr_t pc = read<uintptr_t>(items + 0x20 + i * 8);
-        if (!pc) continue;
+        if (!pc || !canRead(pc)) continue;
 
-        // PlayerControl.Data
-        uintptr_t data = read<uintptr_t>(pc + Off::Data);
-        if (!data) continue;
+        // Data (offset 0x38)
+        uintptr_t data = read<uintptr_t>(pc + 0x38);
+        if (!data || !canRead(data)) continue;
 
-        // PlayerName
-        uintptr_t namePtr = read<uintptr_t>(data + Off::PlayerName);
-        std::string name = readStr(namePtr);
+        // PlayerName (offset 0x40)
+        uintptr_t namePtr = read<uintptr_t>(data + 0x40);
+        std::string name = (namePtr && canRead(namePtr)) ? readStr(namePtr) : "Unknown";
 
-        // RoleType
-        int role = read<int>(data + Off::RoleType);
+        // RoleType (offset 0x50)
+        int role = read<int>(data + 0x50);
 
-        // IsDead
-        bool dead = read<bool>(data + Off::IsDead);
+        // IsDead (offset 0x78)
+        bool dead = read<bool>(data + 0x78);
 
-        // DefaultOutfit -> ColorId
-        uintptr_t outfit = read<uintptr_t>(data + Off::DefaultOutfit);
-        int color = outfit ? read<int>(outfit + Off::ColorId) : 0;
+        // DefaultOutfit (offset 0x20) -> ColorId (offset 0x10)
+        uintptr_t outfit = read<uintptr_t>(data + 0x20);
+        int color = (outfit && canRead(outfit)) ? read<int>(outfit + 0x10) : 0;
 
-        LOGD("player[%d]: name=%s role=%d color=%d dead=%d", i, name.c_str(), role, color, dead);
+        LOGD("[%d] name=%s role=%d color=%d", i, name.c_str(), role, color);
 
         jobject obj = env->AllocObject(cls);
         env->SetObjectField(obj, env->GetFieldID(cls, "name", "Ljava/lang/String;"), env->NewStringUTF(name.c_str()));
@@ -171,7 +222,6 @@ Java_com_systemhelper_NativeHelper_getPlayerList(JNIEnv* env, jclass) {
         env->SetObjectArrayElement(arr, i, obj);
     }
 
-    LOGD("returning %d players", count);
     return arr;
 }
 
