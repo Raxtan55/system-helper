@@ -207,6 +207,7 @@ public class OverlayService extends Service {
     }
 
     private void openMenu() {
+        initNative();
         if (menuView != null) wm.removeView(menuView);
 
         int type = Build.VERSION.SDK_INT >= Build.VERSION_CODES.O ?
