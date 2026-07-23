@@ -1,24 +1,26 @@
 #include <jni.h>
 #include <string>
 #include <cstring>
+#include <dlfcn.h>
 #include <android/log.h>
 
 #define LOG_TAG "Helper"
 #define LOGD(...) __android_log_print(ANDROID_LOG_DEBUG, LOG_TAG, __VA_ARGS__)
 
-namespace Cfg {
-    constexpr uintptr_t O1 = 0x21B47F8;
-    constexpr uintptr_t O2 = 0x8;
-    constexpr uintptr_t O4 = 0x2415BDC;
-    constexpr uintptr_t O6 = 0x50;
-    constexpr uintptr_t O7 = 0x78;
-    constexpr uintptr_t O8 = 0x10;
-    constexpr uintptr_t S1 = 0x4913778;
-    constexpr uintptr_t S2 = 0x4913A90;
-    constexpr uintptr_t S3 = 0x4913B28;
-}
-
 static uintptr_t base = 0;
+
+// IL2CPP API types
+typedef void* Il2CppClass;
+typedef void* FieldInfo;
+typedef void* Il2CppImage;
+
+// IL2CPP API functions
+static Il2CppClass* (*il2cpp_class_from_name)(Il2CppImage* image, const char* namespaze, const char* name);
+static FieldInfo* (*il2cpp_class_get_field_from_name)(Il2CppClass* klass, const char* name);
+static void (*il2cpp_field_static_get_value)(FieldInfo* field, void* value);
+static Il2CppImage* (*il2cpp_assembly_get_image)(void* assembly);
+static void* (*il2cpp_domain_get)();
+static void** (*il2cpp_domain_get_assemblies)(void* domain, size_t* size);
 
 template<typename T>
 T read(uintptr_t addr) {
@@ -52,11 +54,53 @@ const char* cName(int id) {
     }
 }
 
+bool initIL2CPP() {
+    void* handle = dlopen("libil2cpp.so", RTLD_LAZY);
+    if (!handle) {
+        LOGD("dlopen failed: %s", dlerror());
+        return false;
+    }
+
+    il2cpp_class_from_name = (Il2CppClass* (*)(Il2CppImage*, const char*, const char*))dlsym(handle, "il2cpp_class_from_name");
+    il2cpp_class_get_field_from_name = (FieldInfo* (*)(Il2CppClass*, const char*))dlsym(handle, "il2cpp_class_get_field_from_name");
+    il2cpp_field_static_get_value = (void (*)(FieldInfo*, void*))dlsym(handle, "il2cpp_field_static_get_value");
+    il2cpp_assembly_get_image = (Il2CppImage* (*)(void*))dlsym(handle, "il2cpp_assembly_get_image");
+    il2cpp_domain_get = (void* (*)())dlsym(handle, "il2cpp_domain_get");
+    il2cpp_domain_get_assemblies = (void** (*)(void*, size_t*))dlsym(handle, "il2cpp_domain_get_assemblies");
+
+    return il2cpp_class_from_name && il2cpp_field_static_get_value;
+}
+
+Il2CppImage* findAssembly(const char* name) {
+    size_t count;
+    void** assemblies = il2cpp_domain_get_assemblies(il2cpp_domain_get(), &count);
+    for (size_t i = 0; i < count; i++) {
+        Il2CppImage* image = il2cpp_assembly_get_image(assemblies[i]);
+        // Assembly adını kontrol et
+        if (image) {
+            // Basit kontrol - Assembly-CSharp ara
+            char* imgName = (char*)image;
+            if (strstr(imgName, name)) {
+                return image;
+            }
+        }
+    }
+    return nullptr;
+}
+
 extern "C" {
 
 JNIEXPORT jboolean JNICALL
-Java_com_systemhelper_NativeHelper_init(JNIEnv*, jclass, jlong addr) {
+Java_com_systemhelper_NativeHelper_init(JNIEnv* env, jclass, jlong addr) {
     base = (uintptr_t)addr;
+    LOGD("init base=%p", (void*)base);
+
+    if (initIL2CPP()) {
+        LOGD("IL2CPP API initialized");
+    } else {
+        LOGD("IL2CPP API init failed");
+    }
+
     return base != 0;
 }
 
@@ -70,6 +114,7 @@ Java_com_systemhelper_NativeHelper_getPlayerList(JNIEnv* env, jclass) {
     LOGD("getPlayerList called, base=%p", (void*)base);
     if (!base) return nullptr;
 
+    // Test verisi dondur - IL2CPP API hazir olana kadar
     jclass cls = env->FindClass("com/systemhelper/NativeHelper$PlayerInfo");
     jobjectArray arr = env->NewObjectArray(1, cls, nullptr);
 
