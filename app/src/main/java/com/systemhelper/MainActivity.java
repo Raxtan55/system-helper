@@ -1,229 +1,397 @@
 package com.systemhelper;
 
+import android.animation.ObjectAnimator;
+import android.animation.ValueAnimator;
 import android.app.Activity;
 import android.content.Intent;
 import android.graphics.Color;
+import android.graphics.LinearGradient;
+import android.graphics.Shader;
+import android.graphics.Typeface;
+import android.graphics.drawable.GradientDrawable;
 import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
+import android.os.Handler;
 import android.provider.Settings;
 import android.view.Gravity;
 import android.view.View;
+import android.view.animation.AlphaAnimation;
+import android.view.animation.Animation;
+import android.view.animation.AnimationUtils;
+import android.view.animation.DecelerateInterpolator;
 import android.widget.Button;
+import android.widget.FrameLayout;
 import android.widget.LinearLayout;
+import android.widget.ProgressBar;
 import android.widget.ScrollView;
 import android.widget.TextView;
-import android.widget.Toast;
 
 public class MainActivity extends Activity {
 
-    private static final int OVERLAY_PERMISSION_CODE = 1001;
-    private TextView statusText;
-    private LinearLayout rootStatus, overlayStatus, gameStatus;
-    private Button startButton;
-    private LinearLayout logContainer;
+    private TextView statusText, rootVal, overlayVal, gameVal, titleText, subtitleText;
+    private LinearLayout rootCard, overlayCard, gameCard;
+    private Button startBtn;
+    private LinearLayout logBox;
+    private ProgressBar progress;
+    private View pulseView;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
-        createPremiumUI();
-        checkAll();
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
+            getWindow().setStatusBarColor(Color.parseColor("#0D0D1A"));
+            getWindow().setNavigationBarColor(Color.parseColor("#0D0D1A"));
+        }
+        buildUI();
+        autoRequestOverlay();
     }
 
-    private void createPremiumUI() {
-        LinearLayout root = new LinearLayout(this);
-        root.setOrientation(LinearLayout.VERTICAL);
-        root.setBackgroundColor(Color.parseColor("#FAFAFA"));
-        root.setPadding(0, 0, 0, 0);
+    private void autoRequestOverlay() {
+        if (!Settings.canDrawOverlays(this)) {
+            Intent intent = new Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
+                    Uri.parse("package:" + getPackageName()));
+            startActivityForResult(intent, 1001);
+        }
+        new Handler().postDelayed(this::checkAll, 500);
+    }
 
-        // Header
+    private void buildUI() {
+        FrameLayout root = new FrameLayout(this);
+
+        // Gradient background
+        View bg = new View(this);
+        GradientDrawable gradBg = new GradientDrawable(
+                GradientDrawable.Orientation.TL_BR,
+                new int[]{Color.parseColor("#0D0D1A"), Color.parseColor("#1A1A3E"), Color.parseColor("#0D0D1A")});
+        bg.setBackground(gradBg);
+        root.addView(bg, new FrameLayout.LayoutParams(
+                FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT));
+
+        // Animated accent circles
+        pulseView = new View(this);
+        GradientDrawable pulse = new GradientDrawable();
+        pulse.setShape(GradientDrawable.OVAL);
+        pulse.setColor(Color.parseColor("#154FC3F7"));
+        pulseView.setBackground(pulse);
+        FrameLayout.LayoutParams pulseP = new FrameLayout.LayoutParams(600, 600);
+        pulseP.gravity = Gravity.CENTER;
+        pulseP.topMargin = -200;
+        root.addView(pulseView, pulseP);
+
+        animatePulse();
+
+        ScrollView scroll = new ScrollView(this);
+        scroll.setFillViewport(true);
+
+        LinearLayout main = new LinearLayout(this);
+        main.setOrientation(LinearLayout.VERTICAL);
+        main.setGravity(Gravity.CENTER_HORIZONTAL);
+
+        // === HEADER ===
         LinearLayout header = new LinearLayout(this);
-        header.setOrientation(LinearLayout.HORIZONTAL);
-        header.setBackgroundColor(Color.WHITE);
-        header.setPadding(48, 40, 48, 40);
-        header.setGravity(Gravity.CENTER_VERTICAL);
-        header.setElevation(8);
+        header.setOrientation(LinearLayout.VERTICAL);
+        header.setGravity(Gravity.CENTER_HORIZONTAL);
+        header.setPadding(0, 120, 0, 60);
 
-        LinearLayout titleLayout = new LinearLayout(this);
-        titleLayout.setOrientation(LinearLayout.VERTICAL);
+        // App icon circle
+        FrameLayout iconWrap = new FrameLayout(this);
+        LinearLayout iconCircle = new LinearLayout(this);
+        iconCircle.setGravity(Gravity.CENTER);
+        GradientDrawable iconBg = new GradientDrawable();
+        iconBg.setShape(GradientDrawable.OVAL);
+        iconBg.setColor(Color.parseColor("#1A4FC3F7"));
+        iconBg.setStroke(3, Color.parseColor("#4FC3F7"));
+        iconCircle.setBackground(iconBg);
+        iconCircle.setLayoutParams(new FrameLayout.LayoutParams(120, 120));
 
-        TextView title = new TextView(this);
-        title.setText("VoyageLoader");
-        title.setTextColor(Color.parseColor("#1A1A2E"));
-        title.setTextSize(28);
-        title.setTypeface(null, 1);
+        TextView iconText = new TextView(this);
+        iconText.setText("V");
+        iconText.setTextColor(Color.parseColor("#4FC3F7"));
+        iconText.setTextSize(36);
+        iconText.setTypeface(Typeface.DEFAULT_BOLD);
+        iconCircle.addView(iconText);
+        iconWrap.addView(iconCircle);
 
-        TextView version = new TextView(this);
-        version.setText("Version 1.0");
-        version.setTextColor(Color.parseColor("#9E9E9E"));
-        version.setTextSize(14);
+        LinearLayout.LayoutParams iconLP = new LinearLayout.LayoutParams(120, 120);
+        iconLP.bottomMargin = 32;
+        header.addView(iconWrap, iconLP);
 
-        titleLayout.addView(title);
-        titleLayout.addView(version);
-        header.addView(titleLayout);
+        titleText = new TextView(this);
+        titleText.setText("VoyageLoader");
+        titleText.setTextColor(Color.WHITE);
+        titleText.setTextSize(32);
+        titleText.setTypeface(Typeface.DEFAULT_BOLD);
+        titleText.setLetterSpacing(0.05f);
+        header.addView(titleText);
 
-        root.addView(header);
+        subtitleText = new TextView(this);
+        subtitleText.setText("Version 1.0 • Premium Edition");
+        subtitleText.setTextColor(Color.parseColor("#64748B"));
+        subtitleText.setTextSize(13);
+        subtitleText.setLetterSpacing(0.1f);
+        subtitleText.setPadding(0, 8, 0, 0);
+        header.addView(subtitleText);
 
-        // Content
-        ScrollView scrollView = new ScrollView(this);
-        LinearLayout content = new LinearLayout(this);
-        content.setOrientation(LinearLayout.VERTICAL);
-        content.setPadding(48, 48, 48, 48);
+        main.addView(header);
 
-        // Status Cards
-        rootStatus = createStatusCard("Root Erişimi", "Kontrol ediliyor...");
-        overlayStatus = createStatusCard("Overlay İzin", "Kontrol ediliyor...");
-        gameStatus = createStatusCard("Oyun Durumu", "Kontrol ediliyor...");
+        // === STATUS CARDS ===
+        LinearLayout cardsWrap = new LinearLayout(this);
+        cardsWrap.setOrientation(LinearLayout.VERTICAL);
+        cardsWrap.setPadding(48, 0, 48, 32);
 
-        content.addView(rootStatus);
-        content.addView(createSpacer(16));
-        content.addView(overlayStatus);
-        content.addView(createSpacer(16));
-        content.addView(gameStatus);
-        content.addView(createSpacer(32));
+        rootCard = makeCard("Root Erişimi", "Kontrol ediliyor...", "#10B981", "#94A3B8");
+        overlayCard = makeCard("Overlay İzin", "Kontrol ediliyor...", "#3B82F6", "#94A3B8");
+        gameCard = makeCard("Oyun Durumu", "Kontrol ediliyor...", "#8B5CF6", "#94A3B8");
 
-        // Status text
+        cardsWrap.addView(rootCard);
+        cardsWrap.addView(spacer(16));
+        cardsWrap.addView(overlayCard);
+        cardsWrap.addView(spacer(16));
+        cardsWrap.addView(gameCard);
+
+        main.addView(cardsWrap);
+
+        // === STATUS TEXT ===
         statusText = new TextView(this);
-        statusText.setText("Hazır");
-        statusText.setTextColor(Color.parseColor("#4CAF50"));
-        statusText.setTextSize(16);
+        statusText.setText("Kontrol ediliyor...");
+        statusText.setTextColor(Color.parseColor("#94A3B8"));
+        statusText.setTextSize(15);
         statusText.setGravity(Gravity.CENTER);
-        statusText.setPadding(0, 16, 0, 16);
-        content.addView(statusText);
-        content.addView(createSpacer(16));
+        statusText.setPadding(0, 32, 0, 8);
+        main.addView(statusText);
 
-        // Start Button
-        startButton = new Button(this);
-        startButton.setText("Servisi Başlat");
-        startButton.setBackgroundColor(Color.parseColor("#1A1A2E"));
-        startButton.setTextColor(Color.WHITE);
-        startButton.setTextSize(16);
-        startButton.setPadding(48, 32, 48, 32);
-        startButton.setOnClickListener(v -> handleStart());
-        content.addView(startButton);
-        content.addView(createSpacer(32));
+        // === PROGRESS ===
+        progress = new ProgressBar(this, null, android.R.attr.progressBarStyleHorizontal);
+        progress.setIndeterminate(true);
+        LinearLayout.LayoutParams progLP = new LinearLayout.LayoutParams(400, 8);
+        progLP.gravity = Gravity.CENTER;
+        progLP.topMargin = 16;
+        main.addView(progress, progLP);
 
-        // Log area
-        TextView logTitle = new TextView(this);
-        logTitle.setText("Log");
-        logTitle.setTextColor(Color.parseColor("#757575"));
-        logTitle.setTextSize(12);
-        content.addView(logTitle);
-        content.addView(createSpacer(8));
+        // === START BUTTON ===
+        FrameLayout btnWrap = new FrameLayout(this);
+        btnWrap.setPadding(48, 48, 48, 24);
 
-        logContainer = new LinearLayout(this);
-        logContainer.setOrientation(LinearLayout.VERTICAL);
-        logContainer.setBackgroundColor(Color.WHITE);
-        logContainer.setPadding(24, 24, 24, 24);
-        content.addView(logContainer);
+        startBtn = new Button(this);
+        startBtn.setText("  Servisi Başlat");
+        startBtn.setTextColor(Color.WHITE);
+        startBtn.setTextSize(16);
+        startBtn.setTypeface(Typeface.DEFAULT_BOLD);
+        startBtn.setAllCaps(false);
+        startBtn.setLetterSpacing(0.05f);
+        startBtn.setPadding(48, 36, 48, 36);
 
-        scrollView.addView(content);
-        root.addView(scrollView);
+        GradientDrawable btnBg = new GradientDrawable();
+        btnBg.setCornerRadius(20);
+        btnBg.setColor(Color.parseColor("#4FC3F7"));
+        btnBg.setStroke(0, Color.TRANSPARENT);
+        startBtn.setBackground(btnBg);
+        startBtn.setElevation(12);
+        startBtn.setEnabled(false);
+        startBtn.setAlpha(0.5f);
+        startBtn.setOnClickListener(v -> handleStart());
+
+        btnWrap.addView(startBtn);
+        main.addView(btnWrap);
+
+        // === LOG ===
+        LinearLayout logWrap = new LinearLayout(this);
+        logWrap.setOrientation(LinearLayout.VERTICAL);
+        logWrap.setPadding(48, 24, 48, 48);
+
+        TextView logLabel = new TextView(this);
+        logLabel.setText("LOG");
+        logLabel.setTextColor(Color.parseColor("#475569"));
+        logLabel.setTextSize(11);
+        logLabel.setLetterSpacing(0.15f);
+        logLabel.setTypeface(Typeface.DEFAULT_BOLD);
+        logWrap.addView(logLabel);
+        logWrap.addView(spacer(12));
+
+        logBox = new LinearLayout(this);
+        logBox.setOrientation(LinearLayout.VERTICAL);
+        logBox.setPadding(28, 24, 28, 24);
+
+        GradientDrawable logBg = new GradientDrawable();
+        logBg.setCornerRadius(16);
+        logBg.setColor(Color.parseColor("#1E1E2E"));
+        logBox.setBackground(logBg);
+
+        logWrap.addView(logBox);
+        main.addView(logWrap);
+
+        scroll.addView(main);
+        root.addView(scroll);
 
         setContentView(root);
+
+        // Entry animation
+        startBtn.setScaleX(0.8f);
+        startBtn.setScaleY(0.8f);
+        startBtn.animate().scaleX(1f).scaleY(1f).setDuration(600).setStartDelay(800).setInterpolator(new DecelerateInterpolator()).start();
     }
 
-    private LinearLayout createStatusCard(String label, String value) {
+    private LinearLayout makeCard(String label, String value, String accent, String labelColor) {
         LinearLayout card = new LinearLayout(this);
-        card.setOrientation(LinearLayout.VERTICAL);
-        card.setBackgroundColor(Color.WHITE);
-        card.setPadding(32, 24, 32, 24);
+        card.setOrientation(LinearLayout.HORIZONTAL);
+        card.setGravity(Gravity.CENTER_VERTICAL);
+        card.setPadding(36, 28, 36, 28);
+
+        GradientDrawable cardBg = new GradientDrawable();
+        cardBg.setCornerRadius(20);
+        cardBg.setColor(Color.parseColor("#161625"));
+        cardBg.setStroke(1, Color.parseColor("#252540"));
+        card.setBackground(cardBg);
         card.setElevation(4);
 
-        TextView labelText = new TextView(this);
-        labelText.setText(label);
-        labelText.setTextColor(Color.parseColor("#9E9E9E"));
-        labelText.setTextSize(12);
+        // Accent dot
+        View dot = new View(this);
+        GradientDrawable dotBg = new GradientDrawable();
+        dotBg.setShape(GradientDrawable.OVAL);
+        dotBg.setColor(Color.parseColor(accent));
+        dot.setBackground(dotBg);
+        LinearLayout.LayoutParams dotLP = new LinearLayout.LayoutParams(16, 16);
+        dotLP.rightMargin = 24;
+        card.addView(dot, dotLP);
 
-        TextView valueText = new TextView(this);
-        valueText.setText(value);
-        valueText.setTextColor(Color.parseColor("#1A1A2E"));
-        valueText.setTextSize(16);
-        valueText.setTypeface(null, 1);
+        // Texts
+        LinearLayout texts = new LinearLayout(this);
+        texts.setOrientation(LinearLayout.VERTICAL);
+        texts.setLayoutParams(new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f));
 
-        card.addView(labelText);
-        card.addView(valueText);
+        TextView labelTv = new TextView(this);
+        labelTv.setText(label);
+        labelTv.setTextColor(Color.parseColor(labelColor));
+        labelTv.setTextSize(12);
+        labelTv.setLetterSpacing(0.08f);
+
+        TextView valueTv = new TextView(this);
+        valueTv.setText(value);
+        valueTv.setTextColor(Color.WHITE);
+        valueTv.setTextSize(15);
+        valueTv.setTypeface(Typeface.DEFAULT_BOLD);
+        valueTv.setPadding(0, 4, 0, 0);
+
+        texts.addView(labelTv);
+        texts.addView(valueTv);
+        card.addView(texts);
+
+        // Arrow
+        TextView arrow = new TextView(this);
+        arrow.setText("›");
+        arrow.setTextColor(Color.parseColor("#334155"));
+        arrow.setTextSize(24);
+        card.addView(arrow);
+
         return card;
     }
 
-    private View createSpacer(int height) {
-        View spacer = new View(this);
-        spacer.setLayoutParams(new LinearLayout.LayoutParams(1, height));
-        return spacer;
+    private void updateCard(LinearLayout card, String value, boolean ok) {
+        LinearLayout texts = (LinearLayout) card.getChildAt(1);
+        TextView valTv = (TextView) texts.getChildAt(1);
+        valTv.setText(value);
+        valTv.setTextColor(ok ? Color.parseColor("#10B981") : Color.parseColor("#EF4444"));
+
+        View dot = card.getChildAt(0);
+        GradientDrawable dotBg = (GradientDrawable) dot.getBackground();
+        dotBg.setColor(ok ? Color.parseColor("#10B981") : Color.parseColor("#EF4444"));
+    }
+
+    private void animatePulse() {
+        ObjectAnimator scaleX = ObjectAnimator.ofFloat(pulseView, "scaleX", 1f, 1.5f, 1f);
+        ObjectAnimator scaleY = ObjectAnimator.ofFloat(pulseView, "scaleY", 1f, 1.5f, 1f);
+        scaleX.setRepeatCount(ValueAnimator.INFINITE);
+        scaleY.setRepeatCount(ValueAnimator.INFINITE);
+        scaleX.setDuration(4000);
+        scaleY.setDuration(4000);
+        scaleX.start();
+        scaleY.start();
     }
 
     private void addLog(String msg) {
-        TextView log = new TextView(this);
-        log.setText("• " + msg);
-        log.setTextColor(Color.parseColor("#616161"));
-        log.setTextSize(13);
-        log.setPadding(0, 8, 0, 8);
-        logContainer.addView(log);
+        TextView tv = new TextView(this);
+        tv.setText("› " + msg);
+        tv.setTextColor(Color.parseColor("#94A3B8"));
+        tv.setTextSize(13);
+        tv.setPadding(0, 8, 0, 8);
+        logBox.addView(tv);
+    }
+
+    private View spacer(int h) {
+        View v = new View(this);
+        v.setLayoutParams(new LinearLayout.LayoutParams(1, h));
+        return v;
     }
 
     private void checkAll() {
-        boolean root = isRootAvailable();
+        boolean root = hasRoot();
         boolean overlay = Settings.canDrawOverlays(this);
         boolean game = isGameRunning();
 
-        updateStatusCard(rootStatus, root ? "Mevcut ✓" : "Yok ✗", root);
-        updateStatusCard(overlayStatus, overlay ? "Verilmiş ✓" : "Verilmemiş ✗", overlay);
-        updateStatusCard(gameStatus, game ? "Çalışıyor ✓" : "Kapalı ✗", game);
+        updateCard(rootCard, root ? "Erişilebilir" : "Bulunamadı", root);
+        updateCard(overlayCard, overlay ? "Verilmiş" : "Verilmedi", overlay);
+        updateCard(gameCard, game ? "Çalışıyor" : "Kapalı", game);
+
+        progress.setVisibility(View.GONE);
 
         if (root && overlay && game) {
-            statusText.setText("Hazır - Başlatılabilir");
-            statusText.setTextColor(Color.parseColor("#4CAF50"));
-            startButton.setEnabled(true);
+            statusText.setText("Hazır — Başlatılabilir");
+            statusText.setTextColor(Color.parseColor("#10B981"));
+            startBtn.setEnabled(true);
+            startBtn.setAlpha(1f);
         } else if (!root) {
-            statusText.setText("Root gerekli");
-            statusText.setTextColor(Color.parseColor("#F44336"));
-            startButton.setEnabled(false);
+            statusText.setText("Root erişimi gerekli");
+            statusText.setTextColor(Color.parseColor("#EF4444"));
         } else if (!overlay) {
             statusText.setText("Overlay izni gerekli");
-            statusText.setTextColor(Color.parseColor("#FF9800"));
-            startButton.setEnabled(false);
+            statusText.setTextColor(Color.parseColor("#F59E0B"));
         } else {
-            statusText.setText("Oyun bekleniyor...");
-            statusText.setTextColor(Color.parseColor("#FF9800"));
-            startButton.setEnabled(false);
+            statusText.setText("Among Us bekleniyor...");
+            statusText.setTextColor(Color.parseColor("#F59E0B"));
+            waitForGame();
         }
     }
 
-    private void updateStatusCard(LinearLayout card, String value, boolean ok) {
-        TextView tv = (TextView) card.getChildAt(1);
-        tv.setText(value);
-        tv.setTextColor(ok ? Color.parseColor("#4CAF50") : Color.parseColor("#F44336"));
+    private void waitForGame() {
+        new Thread(() -> {
+            for (int i = 0; i < 60; i++) {
+                try { Thread.sleep(2000); } catch (Exception ignored) {}
+                if (isGameRunning()) {
+                    runOnUiThread(() -> {
+                        addLog("Oyun algılandı");
+                        checkAll();
+                    });
+                    return;
+                }
+            }
+            runOnUiThread(() -> addLog("Zaman aşımı — tekrar deneyin"));
+        }).start();
     }
 
-    private boolean isRootAvailable() {
+    private boolean hasRoot() {
         try {
             Process p = Runtime.getRuntime().exec("su -c id");
             p.waitFor();
             return p.exitValue() == 0;
-        } catch (Exception e) {
-            return false;
-        }
+        } catch (Exception e) { return false; }
     }
 
     private boolean isGameRunning() {
         try {
             Process p = Runtime.getRuntime().exec("pidof com.innersloth.spacemafia");
-            java.io.InputStream is = p.getInputStream();
             byte[] buf = new byte[128];
-            int len = is.read(buf);
+            int len = p.getInputStream().read(buf);
             p.waitFor();
             return len > 0 && new String(buf, 0, len).trim().length() > 0;
-        } catch (Exception e) {
-            return false;
-        }
+        } catch (Exception e) { return false; }
     }
 
-    private int getGamePid() {
+    private int getPid() {
         try {
             Process p = Runtime.getRuntime().exec("pidof com.innersloth.spacemafia");
-            java.io.InputStream is = p.getInputStream();
             byte[] buf = new byte[128];
-            int len = is.read(buf);
+            int len = p.getInputStream().read(buf);
             p.waitFor();
             if (len > 0) {
                 String s = new String(buf, 0, len).trim();
@@ -235,110 +403,58 @@ public class MainActivity extends Activity {
 
     private void handleStart() {
         if (!Settings.canDrawOverlays(this)) {
-            Intent intent = new Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
-                    Uri.parse("package:" + getPackageName()));
-            startActivityForResult(intent, OVERLAY_PERMISSION_CODE);
+            autoRequestOverlay();
             return;
         }
-
-        if (!isRootAvailable()) {
-            Toast.makeText(this, "Root gerekli!", Toast.LENGTH_LONG).show();
+        if (!hasRoot()) {
+            addLog("Root erişimi yok");
             return;
         }
-
         if (!isGameRunning()) {
-            Toast.makeText(this, "Önce Among Us'u açın!", Toast.LENGTH_LONG).show();
-            addLog("Oyun açık değil, Among Us'u başlatın");
-            // Periyodik kontrol başlat
-            startGameCheck();
+            addLog("Oyun açık değil — bekleniyor...");
+            waitForGame();
             return;
         }
-
-        startService();
+        launch();
     }
 
-    private void startGameCheck() {
-        new Thread(() -> {
-            for (int i = 0; i < 30; i++) {
-                try { Thread.sleep(2000); } catch (Exception ignored) {}
-                if (isGameRunning()) {
-                    runOnUiThread(() -> {
-                        addLog("Oyun algılandı!");
-                        checkAll();
-                        startService();
-                    });
-                    return;
-                }
-            }
-            runOnUiThread(() -> addLog("Oyun zaman aşımı - tekrar deneyin"));
-        }).start();
-    }
-
-    private void startService() {
+    private void launch() {
         try {
-            int pid = getGamePid();
-            if (pid == -1) {
-                addLog("PID alınamadı");
-                return;
-            }
+            int pid = getPid();
+            addLog("PID: " + pid);
 
-            addLog("Oyun PID: " + pid);
-            injectLibrary(pid);
+            String lib = getApplicationInfo().nativeLibraryDir + "/libhelper.so";
+            Process p = Runtime.getRuntime().exec("su");
+            java.io.OutputStream os = p.getOutputStream();
+            os.write(("cp " + lib + " /data/local/tmp/.v\n").getBytes());
+            os.write("chmod 755 /data/local/tmp/.v\n".getBytes());
+            os.flush();
+            os.close();
+            p.waitFor();
 
-            Intent serviceIntent = new Intent(this, OverlayService.class);
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                startForegroundService(serviceIntent);
-            } else {
-                startService(serviceIntent);
-            }
+            startService(new Intent(this, OverlayService.class));
 
             addLog("Servis başlatıldı");
-            statusText.setText("Çalışıyor");
-            statusText.setTextColor(Color.parseColor("#4CAF50"));
-            startButton.setText("Çalışıyor");
-            startButton.setEnabled(false);
-            startButton.setBackgroundColor(Color.parseColor("#9E9E9E"));
+            statusText.setText("Aktif");
+            statusText.setTextColor(Color.parseColor("#10B981"));
+            startBtn.setText("  Aktif");
+            startBtn.setEnabled(false);
+            startBtn.setAlpha(0.5f);
 
         } catch (Exception e) {
             addLog("Hata: " + e.getMessage());
-            Toast.makeText(this, "Hata: " + e.getMessage(), Toast.LENGTH_LONG).show();
         }
-    }
-
-    private void injectLibrary(int pid) throws Exception {
-        String libPath = getApplicationInfo().nativeLibraryDir + "/libhelper.so";
-        addLog("Kütüphane: " + libPath);
-
-        Process p = Runtime.getRuntime().exec("su");
-        java.io.OutputStream os = p.getOutputStream();
-
-        // Kütüphaneyi hedef process'in maps'ine enjekte et
-        os.write(("echo 'Enjeksiyon basliyor...'\n").getBytes());
-        os.write(("ls -la " + libPath + "\n").getBytes());
-        os.write(("cp " + libPath + " /data/local/tmp/libhelper.so\n").getBytes());
-        os.write(("chmod 755 /data/local/tmp/libhelper.so\n").getBytes());
-
-        // LD_PRELOAD ile enjeksiyon
-        os.write(("echo '/data/local/tmp/libhelper.so' >> /proc/" + pid + "/maps\n").getBytes());
-
-        os.flush();
-        os.close();
-
-        int exit = p.waitFor();
-        addLog("Enjeksiyon exit: " + exit);
     }
 
     @Override
     protected void onResume() {
         super.onResume();
-        checkAll();
+        new Handler().postDelayed(this::checkAll, 300);
     }
 
     @Override
-    protected void onActivityResult(int requestCode, int resultCode, Intent data) {
-        super.onActivityResult(requestCode, resultCode, data);
-        if (requestCode == OVERLAY_PERMISSION_CODE) {
-            checkAll();
-        }
+    protected void onActivityResult(int req, int res, Intent data) {
+        super.onActivityResult(req, res, data);
+        new Handler().postDelayed(this::checkAll, 300);
     }
 }
