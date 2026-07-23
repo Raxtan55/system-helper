@@ -22,6 +22,10 @@ import android.widget.LinearLayout;
 import android.widget.ScrollView;
 import android.widget.TextView;
 
+import java.io.File;
+import java.io.FileWriter;
+import java.io.PrintWriter;
+
 public class OverlayService extends Service {
 
     private WindowManager wm;
@@ -31,19 +35,28 @@ public class OverlayService extends Service {
     private LinearLayout listContainer;
     private AntiBan antiBan;
 
+    private void log(String msg) {
+        try {
+            File f = new File(getExternalFilesDir(null), "voyage_log.txt");
+            FileWriter fw = new FileWriter(f, true);
+            fw.write(java.text.SimpleDateFormat.getTimeInstance().format(new java.util.Date()) + ": " + msg + "\n");
+            fw.close();
+        } catch (Exception ignored) {}
+    }
+
     @Override
     public void onCreate() {
         super.onCreate();
-        android.util.Log.d("Voyage", "onCreate basladi");
+        log("onCreate basladi");
         try {
             handler = new Handler(Looper.getMainLooper());
             antiBan = new AntiBan(this);
             startForeground(1, buildNotif());
-            android.util.Log.d("Voyage", "canDrawOverlays: " + android.provider.Settings.canDrawOverlays(this));
+            log("notif tamam, canDraw=" + android.provider.Settings.canDrawOverlays(this));
             createFab();
-            android.util.Log.d("Voyage", "createFab tamamlandi");
+            log("createFab tamam");
         } catch (Exception e) {
-            android.util.Log.e("Voyage", "Hata: " + e.getMessage(), e);
+            log("HATA: " + e.getMessage());
             e.printStackTrace();
         }
     }
@@ -72,10 +85,12 @@ public class OverlayService extends Service {
     }
 
     private void createFab() {
+        log("createFab basladi");
         wm = (WindowManager) getSystemService(WINDOW_SERVICE);
         int type = Build.VERSION.SDK_INT >= Build.VERSION_CODES.O ?
                 WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY :
                 WindowManager.LayoutParams.TYPE_PHONE;
+        log("type=" + type);
 
         WindowManager.LayoutParams p = new WindowManager.LayoutParams(150, 150, type,
                 WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE, PixelFormat.TRANSLUCENT);
@@ -116,7 +131,9 @@ public class OverlayService extends Service {
         fab.addView(inner, innerLP);
 
         fabView = fab;
+        log("wm.addView oncesi");
         wm.addView(fabView, p);
+        log("wm.addView tamam");
 
         final float[] tx = new float[1];
         final float[] ty = new float[1];
