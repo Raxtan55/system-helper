@@ -44,10 +44,33 @@ public class OverlayService extends Service {
         } catch (Exception ignored) {}
     }
 
+    private void startLogcat() {
+        new Thread(() -> {
+            try {
+                File f = new File(getExternalFilesDir(null), "logcat.txt");
+                Process p = Runtime.getRuntime().exec("logcat -c");
+                p.waitFor();
+                Process logcat = Runtime.getRuntime().exec("logcat");
+                java.io.InputStream is = logcat.getInputStream();
+                FileWriter fw = new FileWriter(f);
+                byte[] buf = new byte[4096];
+                int len;
+                while ((len = is.read(buf)) != -1) {
+                    fw.write(new String(buf, 0, len));
+                    fw.flush();
+                }
+                fw.close();
+            } catch (Exception e) {
+                log("logcat error: " + e.getMessage());
+            }
+        }).start();
+    }
+
     @Override
     public void onCreate() {
         super.onCreate();
         log("onCreate basladi");
+        startLogcat();
         try {
             handler = new Handler(Looper.getMainLooper());
             antiBan = new AntiBan(this);
