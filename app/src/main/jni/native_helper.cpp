@@ -70,56 +70,18 @@ Java_com_systemhelper_NativeHelper_getPlayerList(JNIEnv* env, jclass) {
     LOGD("getPlayerList called, base=%p", (void*)base);
     if (!base) return nullptr;
 
-    // AllPlayerControls listesi
-    uintptr_t list = read<uintptr_t>(base + Cfg::S3);
-    LOGD("AllPlayerControls list=%p", (void*)list);
-    if (!list) return nullptr;
-
-    uintptr_t items = read<uintptr_t>(list + 0x10);
-    int count = read<int32_t>(list + 0x18);
-    LOGD("list items=%p count=%d", (void*)items, count);
-
-    if (!items || count <= 0 || count > 15) return nullptr;
-
     jclass cls = env->FindClass("com/systemhelper/NativeHelper$PlayerInfo");
-    LOGD("cls=%p", cls);
-    jobjectArray arr = env->NewObjectArray(count, cls, nullptr);
+    jobjectArray arr = env->NewObjectArray(1, cls, nullptr);
 
-    for (int i = 0; i < count; i++) {
-        uintptr_t pc = read<uintptr_t>(items + 0x20 + i * 8);
-        LOGD("player[%d] pc=%p", i, (void*)pc);
-        if (!pc) continue;
+    jobject obj = env->AllocObject(cls);
+    env->SetObjectField(obj, env->GetFieldID(cls, "name", "Ljava/lang/String;"), env->NewStringUTF("Test Player"));
+    env->SetObjectField(obj, env->GetFieldID(cls, "colorName", "Ljava/lang/String;"), env->NewStringUTF("Mavi"));
+    env->SetIntField(obj, env->GetFieldID(cls, "role", "I"), 0);
+    env->SetBooleanField(obj, env->GetFieldID(cls, "isDead", "Z"), JNI_FALSE);
+    env->SetBooleanField(obj, env->GetFieldID(cls, "isImpostor", "Z"), JNI_FALSE);
+    env->SetObjectArrayElement(arr, 0, obj);
 
-        // PlayerControl.Data
-        uintptr_t data = read<uintptr_t>(pc + 0x38);
-        LOGD("player[%d] data=%p", i, (void*)data);
-        if (!data) continue;
-
-        // PlayerName
-        uintptr_t namePtr = read<uintptr_t>(data + 0x40);
-        std::string name = readStr(namePtr);
-        LOGD("player[%d] name=%s", i, name.c_str());
-
-        // RoleType
-        int role = read<int>(data + Cfg::O6);
-        LOGD("player[%d] role=%d", i, role);
-
-        // IsDead
-        bool dead = read<bool>(data + Cfg::O7);
-
-        // ColorId from DefaultOutfit
-        uintptr_t outfit = read<uintptr_t>(data + 0x20);
-        int color = outfit ? read<int>(outfit + Cfg::O8) : 0;
-        LOGD("player[%d] color=%d", i, color);
-
-        jobject obj = env->AllocObject(cls);
-        env->SetObjectField(obj, env->GetFieldID(cls, "name", "Ljava/lang/String;"), env->NewStringUTF(name.c_str()));
-        env->SetObjectField(obj, env->GetFieldID(cls, "colorName", "Ljava/lang/String;"), env->NewStringUTF(cName(color)));
-        env->SetIntField(obj, env->GetFieldID(cls, "role", "I"), role);
-        env->SetBooleanField(obj, env->GetFieldID(cls, "isDead", "Z"), dead);
-        env->SetBooleanField(obj, env->GetFieldID(cls, "isImpostor", "Z"), role==1||role==5||role==7||role==9||role==18);
-        env->SetObjectArrayElement(arr, i, obj);
-    }
+    LOGD("test player returned");
     return arr;
 }
 
