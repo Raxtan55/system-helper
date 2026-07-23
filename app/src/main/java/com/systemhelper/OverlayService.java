@@ -77,21 +77,37 @@ public class OverlayService extends Service {
 
     private long getModuleBase() {
         try {
-            Process p = Runtime.getRuntime().exec("su -c cat /proc/$(pidof com.innersloth.spacemafia)/maps");
+            // Önce PID bul
+            Process pidP = Runtime.getRuntime().exec("su -c pidof com.innersloth.spacemafia");
+            byte[] pidBuf = new byte[128];
+            int pidLen = pidP.getInputStream().read(pidBuf);
+            pidP.waitFor();
+            String pidStr = pidLen > 0 ? new String(pidBuf, 0, pidLen).trim() : "";
+            log("pid output: [" + pidStr + "]");
+            if (pidStr.isEmpty()) return 0;
+
+            String pid = pidStr.split("\\s+")[0];
+            log("pid: " + pid);
+
+            // Maps oku
+            Process p = Runtime.getRuntime().exec("su -c cat /proc/" + pid + "/maps");
             java.io.InputStream is = p.getInputStream();
-            byte[] buf = new byte[4096];
-            int len = is.read(buf);
+            java.io.ByteArrayOutputStream bos = new java.io.ByteArrayOutputStream();
+            byte[] buf = new byte[8192];
+            int len;
+            while ((len = is.read(buf)) != -1) bos.write(buf, 0, len);
             p.waitFor();
-            if (len > 0) {
-                String maps = new String(buf, 0, len);
-                for (String line : maps.split("\n")) {
-                    if (line.contains("libil2cpp.so")) {
-                        String addr = line.split("-")[0];
-                        log("il2cpp addr: " + addr);
-                        return Long.parseLong(addr, 16);
-                    }
+            String maps = bos.toString();
+            log("maps length: " + maps.length());
+
+            for (String line : maps.split("\n")) {
+                if (line.contains("libil2cpp.so") && line.contains("r-xp")) {
+                    String addr = line.split("-")[0].trim();
+                    log("il2cpp base: " + addr);
+                    return Long.parseLong(addr, 16);
                 }
             }
+            log("libil2cpp.so bulunamadi");
         } catch (Exception e) {
             log("getModuleBase HATA: " + e.getMessage());
         }
