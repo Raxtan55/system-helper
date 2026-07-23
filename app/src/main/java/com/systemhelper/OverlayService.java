@@ -52,13 +52,50 @@ public class OverlayService extends Service {
             handler = new Handler(Looper.getMainLooper());
             antiBan = new AntiBan(this);
             startForeground(1, buildNotif());
-            log("notif tamam, canDraw=" + android.provider.Settings.canDrawOverlays(this));
+            log("notif tamam");
+            initNative();
             createFab();
             log("createFab tamam");
         } catch (Exception e) {
             log("HATA: " + e.getMessage());
             e.printStackTrace();
         }
+    }
+
+    private void initNative() {
+        try {
+            long base = getModuleBase();
+            log("module base: " + base);
+            if (base > 0) {
+                NativeHelper.init(base);
+                log("NativeHelper.init basarili");
+            }
+        } catch (Exception e) {
+            log("initNative HATA: " + e.getMessage());
+        }
+    }
+
+    private long getModuleBase() {
+        try {
+            Process p = Runtime.getRuntime().exec("su -c cat /proc/$(pidof com.innersloth.spacemafia)/maps");
+            java.io.InputStream is = p.getInputStream();
+            byte[] buf = new byte[4096];
+            int len = is.read(buf);
+            p.waitFor();
+            if (len > 0) {
+                String maps = new String(buf, 0, len);
+                for (String line : maps.split("\n")) {
+                    if (line.contains("libil2cpp.so")) {
+                        String addr = line.split("-")[0];
+                        log("il2cpp addr: " + addr);
+                        return Long.parseLong(addr, 16);
+                    }
+                }
+            }
+        } catch (Exception e) {
+            log("getModuleBase HATA: " + e.getMessage());
+        }
+        return 0;
     }
 
     @Override
