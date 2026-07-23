@@ -8,8 +8,7 @@ on:
   workflow_dispatch:
 
 env:
-  FORCE_JAVA_VERSION: '17'
-  ACTIONS_ALLOW_USE_UNSECURE_NODE_VERSION: true
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
 jobs:
   build:
@@ -31,7 +30,7 @@ jobs:
       run: |
         sdkmanager --install "ndk;25.2.9519653"
         echo "ANDROID_NDK_HOME=$ANDROID_HOME/ndk/25.2.9519653" >> $GITHUB_ENV
-        echo "ANDROID_HOME=$ANDROID_HOME" >> $GITHUB_ENV
+        echo "ANDROID_SDK_ROOT=$ANDROID_HOME" >> $GITHUB_ENV
 
     - name: Grant execute permission for gradlew
       run: chmod +x gradlew
@@ -39,16 +38,18 @@ jobs:
     - name: Build with Gradle
       run: |
         export ANDROID_SDK_ROOT=$ANDROID_HOME
-        ./gradlew assembleRelease --stacktrace
+        export ANDROID_HOME=$ANDROID_HOME
+        ./gradlew assembleRelease --stacktrace --no-daemon
 
     - name: Upload APK
       uses: actions/upload-artifact@v4
+      if: success()
       with:
         name: system-helper-apk
         path: app/build/outputs/apk/release/*.apk
 
     - name: Create Release
-      if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+      if: github.ref == 'refs/heads/main' && github.event_name == 'push' && success()
       uses: softprops/action-gh-release@v1
       with:
         files: app/build/outputs/apk/release/*.apk
