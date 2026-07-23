@@ -62,18 +62,24 @@ Java_com_systemhelper_NativeHelper_init(JNIEnv*, jclass, jlong addr) {
 
 JNIEXPORT jboolean JNICALL
 Java_com_systemhelper_NativeHelper_isGameRunning(JNIEnv*, jclass) {
-    if (!base) return JNI_FALSE;
-    return read<uintptr_t>(base + Cfg::S1) && read<uintptr_t>(base + Cfg::S2);
+    return base != 0 ? JNI_TRUE : JNI_FALSE;
 }
 
 JNIEXPORT jobjectArray JNICALL
 Java_com_systemhelper_NativeHelper_getPlayerList(JNIEnv* env, jclass) {
     if (!base) return nullptr;
+
+    // AllPlayerControls listesi
     uintptr_t list = read<uintptr_t>(base + Cfg::S3);
-    if (!list) return nullptr;
+    if (!list) {
+        LOGD("AllPlayerControls null");
+        return nullptr;
+    }
 
     uintptr_t items = read<uintptr_t>(list + 0x10);
     int count = read<int32_t>(list + 0x18);
+    LOGD("list items=%p count=%d", (void*)items, count);
+
     if (!items || count <= 0 || count > 15) return nullptr;
 
     jclass cls = env->FindClass("com/systemhelper/NativeHelper$PlayerInfo");
@@ -81,16 +87,28 @@ Java_com_systemhelper_NativeHelper_getPlayerList(JNIEnv* env, jclass) {
 
     for (int i = 0; i < count; i++) {
         uintptr_t pc = read<uintptr_t>(items + 0x20 + i * 8);
-        if (!pc) continue;
-        uintptr_t data = read<uintptr_t>(pc + 0x38);
-        if (!data) continue;
+        if (!pc) { LOGD("player %d null", i); continue; }
 
-        std::string name = readStr(read<uintptr_t>(data + 0x40));
+        // PlayerControl.Data
+        uintptr_t data = read<uintptr_t>(pc + 0x38);
+        if (!data) { LOGD("player %d data null", i); continue; }
+
+        // PlayerName
+        uintptr_t namePtr = read<uintptr_t>(data + 0x40);
+        std::string name = readStr(namePtr);
+        LOGD("player %d: name=%s", i, name.c_str());
+
+        // RoleType
         int role = read<int>(data + Cfg::O6);
+        LOGD("player %d: role=%d", i, role);
+
+        // IsDead
         bool dead = read<bool>(data + Cfg::O7);
 
+        // ColorId from DefaultOutfit
         uintptr_t outfit = read<uintptr_t>(data + 0x20);
         int color = outfit ? read<int>(outfit + Cfg::O8) : 0;
+        LOGD("player %d: color=%d", i, color);
 
         jobject obj = env->AllocObject(cls);
         env->SetObjectField(obj, env->GetFieldID(cls, "name", "Ljava/lang/String;"), env->NewStringUTF(name.c_str()));
