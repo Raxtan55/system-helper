@@ -199,7 +199,8 @@ public class OverlayService extends Service {
 
         // Player list
         ScrollView scroll = new ScrollView(this);
-        scroll.setMaxHeight(600);
+        scroll.setLayoutParams(new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, 600));
 
         listContainer = new LinearLayout(this);
         listContainer.setOrientation(LinearLayout.VERTICAL);

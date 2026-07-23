@@ -18,7 +18,8 @@ import android.widget.Toast;
 public class MainActivity extends Activity {
 
     private static final int OVERLAY_PERMISSION_CODE = 1001;
-    private TextView statusText, rootStatus, overlayStatus, gameStatus;
+    private TextView statusText;
+    private LinearLayout rootStatus, overlayStatus, gameStatus;
     private Button startButton;
     private LinearLayout logContainer;
 
