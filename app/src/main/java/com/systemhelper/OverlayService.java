@@ -34,10 +34,15 @@ public class OverlayService extends Service {
     @Override
     public void onCreate() {
         super.onCreate();
-        handler = new Handler(Looper.getMainLooper());
-        antiBan = new AntiBan(this);
-        startForeground(1, buildNotif());
-        createFab();
+        try {
+            handler = new Handler(Looper.getMainLooper());
+            antiBan = new AntiBan(this);
+            startForeground(1, buildNotif());
+            createFab();
+        } catch (Exception e) {
+            e.printStackTrace();
+            stopSelf();
+        }
     }
 
     private Notification buildNotif() {

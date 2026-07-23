@@ -411,19 +411,14 @@ public class MainActivity extends Activity {
 
     private void launch() {
         try {
-            int pid = getPid();
-            addLog("PID: " + pid);
+            addLog("Servis başlatılıyor...");
 
-            String lib = getApplicationInfo().nativeLibraryDir + "/libhelper.so";
-            Process p = Runtime.getRuntime().exec("su");
-            java.io.OutputStream os = p.getOutputStream();
-            os.write(("cp " + lib + " /data/local/tmp/.v\n").getBytes());
-            os.write("chmod 755 /data/local/tmp/.v\n".getBytes());
-            os.flush();
-            os.close();
-            p.waitFor();
-
-            startService(new Intent(this, OverlayService.class));
+            Intent svc = new Intent(this, OverlayService.class);
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                startForegroundService(svc);
+            } else {
+                startService(svc);
+            }
 
             addLog("Servis başlatıldı");
             statusText.setText("Aktif");
@@ -434,6 +429,7 @@ public class MainActivity extends Activity {
 
         } catch (Exception e) {
             addLog("Hata: " + e.getMessage());
+            e.printStackTrace();
         }
     }
 
