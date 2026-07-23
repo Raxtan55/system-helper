@@ -3,8 +3,6 @@ name: Build System Helper
 on:
   push:
     branches: [ main ]
-  pull_request:
-    branches: [ main ]
   workflow_dispatch:
 
 env:
@@ -26,34 +24,21 @@ jobs:
     - name: Setup Android SDK
       uses: android-actions/setup-android@v3
 
-    - name: Setup NDK
-      run: |
-        sdkmanager --install "ndk;25.2.9519653"
-        echo "ANDROID_NDK_HOME=$ANDROID_HOME/ndk/25.2.9519653" >> $GITHUB_ENV
-        echo "ANDROID_SDK_ROOT=$ANDROID_HOME" >> $GITHUB_ENV
+    - name: Accept licenses
+      run: yes | sdkmanager --licenses || true
+
+    - name: Install NDK
+      run: sdkmanager "ndk;25.2.9519653"
 
     - name: Grant execute permission for gradlew
       run: chmod +x gradlew
 
-    - name: Build with Gradle
-      run: |
-        export ANDROID_SDK_ROOT=$ANDROID_HOME
-        export ANDROID_HOME=$ANDROID_HOME
-        ./gradlew assembleRelease --stacktrace --no-daemon
+    - name: Build Debug APK
+      run: ./gradlew assembleDebug --stacktrace
 
     - name: Upload APK
       uses: actions/upload-artifact@v4
       if: success()
       with:
-        name: system-helper-apk
-        path: app/build/outputs/apk/release/*.apk
-
-    - name: Create Release
-      if: github.ref == 'refs/heads/main' && github.event_name == 'push' && success()
-      uses: softprops/action-gh-release@v1
-      with:
-        files: app/build/outputs/apk/release/*.apk
-        tag_name: v${{ github.run_number }}
-        name: System Helper v${{ github.run_number }}
-      env:
-        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        name: system-helper-debug
+        path: app/build/outputs/apk/debug/*.apk
