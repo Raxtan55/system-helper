@@ -1,23 +1,12 @@
 #include <jni.h>
 #include <string>
 #include <cstring>
-#include <dlfcn.h>
 #include <android/log.h>
 
 #define LOG_TAG "Helper"
 #define LOGD(...) __android_log_print(ANDROID_LOG_DEBUG, LOG_TAG, __VA_ARGS__)
 
 static uintptr_t base = 0;
-static void* il2cppHandle = nullptr;
-
-// IL2CPP API function pointers
-static void* (*p_il2cpp_domain_get)() = nullptr;
-static void** (*p_il2cpp_domain_get_assemblies)(void* domain, size_t* size) = nullptr;
-static void* (*p_il2cpp_assembly_get_image)(void* assembly) = nullptr;
-static void* (*p_il2cpp_class_from_name)(void* image, const char* namespaze, const char* name) = nullptr;
-static void* (*p_il2cpp_class_get_field_from_name)(void* klass, const char* name) = nullptr;
-static void (*p_il2cpp_field_static_get_value)(void* field, void* value) = nullptr;
-static const char* (*p_il2cpp_image_get_name)(void* image) = nullptr;
 
 template<typename T>
 T read(uintptr_t addr) {
@@ -51,51 +40,24 @@ const char* cName(int id) {
     }
 }
 
-bool initIL2CPP() {
-    il2cppHandle = dlopen("libil2cpp.so", RTLD_LAZY);
-    if (!il2cppHandle) {
-        LOGD("dlopen failed: %s", dlerror());
-        return false;
-    }
-    LOGD("libil2cpp.so loaded");
+// Among Us offsetleri (dump.cs'den)
+namespace Off {
+    // PlayerControl field offsets
+    constexpr uintptr_t PlayerId = 0x35;
+    constexpr uintptr_t Data = 0x38;  // NetworkedPlayerInfo
 
-    p_il2cpp_domain_get = (void* (*)())dlsym(il2cppHandle, "il2cpp_domain_get");
-    p_il2cpp_domain_get_assemblies = (void** (*)(void*, size_t*))dlsym(il2cppHandle, "il2cpp_domain_get_assemblies");
-    p_il2cpp_assembly_get_image = (void* (*)(void*))dlsym(il2cppHandle, "il2cpp_assembly_get_image");
-    p_il2cpp_class_from_name = (void* (*)(void*, const char*, const char*))dlsym(il2cppHandle, "il2cpp_class_from_name");
-    p_il2cpp_class_get_field_from_name = (void* (*)(void*, const char*))dlsym(il2cppHandle, "il2cpp_class_get_field_from_name");
-    p_il2cpp_field_static_get_value = (void (*)(void*, void*))dlsym(il2cppHandle, "il2cpp_field_static_get_value");
-    p_il2cpp_image_get_name = (const char* (*)(void*))dlsym(il2cppHandle, "il2cpp_image_get_name");
+    // NetworkedPlayerInfo field offsets
+    constexpr uintptr_t PlayerName = 0x40;  // string
+    constexpr uintptr_t RoleType = 0x50;    // int
+    constexpr uintptr_t IsDead = 0x78;      // bool
+    constexpr uintptr_t DefaultOutfit = 0x20; // PlayerOutfit
 
-    LOGD("domain_get=%p", p_il2cpp_domain_get);
-    LOGD("class_from_name=%p", p_il2cpp_class_from_name);
-    LOGD("field_static_get_value=%p", p_il2cpp_field_static_get_value);
+    // PlayerOutfit field offsets
+    constexpr uintptr_t ColorId = 0x10;     // int
 
-    return p_il2cpp_domain_get && p_il2cpp_class_from_name && p_il2cpp_field_static_get_value;
-}
-
-void* findAssemblyCSharp() {
-    if (!p_il2cpp_domain_get || !p_il2cpp_domain_get_assemblies || !p_il2cpp_assembly_get_image) {
-        LOGD("API not ready");
-        return nullptr;
-    }
-
-    size_t count;
-    void** assemblies = p_il2cpp_domain_get_assemblies(p_il2cpp_domain_get(), &count);
-    LOGD("assemblies count=%zu", count);
-
-    for (size_t i = 0; i < count; i++) {
-        void* image = p_il2cpp_assembly_get_image(assemblies[i]);
-        if (image && p_il2cpp_image_get_name) {
-            const char* name = p_il2cpp_image_get_name(image);
-            LOGD("assembly[%zu]=%s", i, name ? name : "null");
-            if (name && strstr(name, "Assembly-CSharp")) {
-                LOGD("Found Assembly-CSharp at %zu", i);
-                return image;
-            }
-        }
-    }
-    return nullptr;
+    // Static field offsets (from class start)
+    constexpr uintptr_t LocalPlayer = 0x0;
+    constexpr uintptr_t AllPlayerControls = 0x8;
 }
 
 extern "C" {
@@ -104,19 +66,6 @@ JNIEXPORT jboolean JNICALL
 Java_com_systemhelper_NativeHelper_init(JNIEnv* env, jclass, jlong addr) {
     base = (uintptr_t)addr;
     LOGD("init base=%p", (void*)base);
-
-    if (initIL2CPP()) {
-        LOGD("IL2CPP API initialized");
-        void* image = findAssemblyCSharp();
-        if (image) {
-            LOGD("Assembly-CSharp found: %p", image);
-        } else {
-            LOGD("Assembly-CSharp not found");
-        }
-    } else {
-        LOGD("IL2CPP API init failed");
-    }
-
     return base != 0;
 }
 
@@ -127,15 +76,20 @@ Java_com_systemhelper_NativeHelper_isGameRunning(JNIEnv*, jclass) {
 
 JNIEXPORT jobjectArray JNICALL
 Java_com_systemhelper_NativeHelper_getPlayerList(JNIEnv* env, jclass) {
-    LOGD("getPlayerList called");
+    LOGD("getPlayerList called, base=%p", (void*)base);
     if (!base) return nullptr;
 
     jclass cls = env->FindClass("com/systemhelper/NativeHelper$PlayerInfo");
 
-    // Assembly-CSharp image'ini bul
-    void* image = findAssemblyCSharp();
-    if (!image) {
-        LOGD("Assembly-CSharp not found, returning test");
+    // AllPlayerControls static field'ini oku
+    // Static field'lar class'in baslangic adresinde saklanir
+    // Il2CppClass yapisi: +0x0 klass, +0x8 monitor, ... +0xB8 static_fields
+    uintptr_t playerControlClassAddr = base + 0x4913B28;  // PlayerControl class metadata offset
+    uintptr_t staticFields = read<uintptr_t>(playerControlClassAddr + 0xB8);
+    LOGD("staticFields=%p", (void*)staticFields);
+
+    if (!staticFields) {
+        LOGD("staticFields null, returning test");
         jobjectArray arr = env->NewObjectArray(1, cls, nullptr);
         jobject obj = env->AllocObject(cls);
         env->SetObjectField(obj, env->GetFieldID(cls, "name", "Ljava/lang/String;"), env->NewStringUTF("Test Player"));
@@ -147,47 +101,12 @@ Java_com_systemhelper_NativeHelper_getPlayerList(JNIEnv* env, jclass) {
         return arr;
     }
 
-    // PlayerControl class'ini bul
-    void* playerControlClass = p_il2cpp_class_from_name(image, "", "PlayerControl");
-    LOGD("PlayerControl class=%p", playerControlClass);
-
-    if (!playerControlClass) {
-        LOGD("PlayerControl class not found, returning test");
-        jobjectArray arr = env->NewObjectArray(1, cls, nullptr);
-        jobject obj = env->AllocObject(cls);
-        env->SetObjectField(obj, env->GetFieldID(cls, "name", "Ljava/lang/String;"), env->NewStringUTF("Test Player"));
-        env->SetObjectField(obj, env->GetFieldID(cls, "colorName", "Ljava/lang/String;"), env->NewStringUTF("Mavi"));
-        env->SetIntField(obj, env->GetFieldID(cls, "role", "I"), 0);
-        env->SetBooleanField(obj, env->GetFieldID(cls, "isDead", "Z"), JNI_FALSE);
-        env->SetBooleanField(obj, env->GetFieldID(cls, "isImpostor", "Z"), JNI_FALSE);
-        env->SetObjectArrayElement(arr, 0, obj);
-        return arr;
-    }
-
-    // AllPlayerControls field'ini bul
-    void* allPlayersField = p_il2cpp_class_get_field_from_name(playerControlClass, "AllPlayerControls");
-    LOGD("AllPlayerControls field=%p", allPlayersField);
-
-    if (!allPlayersField) {
-        LOGD("AllPlayerControls field not found, returning test");
-        jobjectArray arr = env->NewObjectArray(1, cls, nullptr);
-        jobject obj = env->AllocObject(cls);
-        env->SetObjectField(obj, env->GetFieldID(cls, "name", "Ljava/lang/String;"), env->NewStringUTF("Test Player"));
-        env->SetObjectField(obj, env->GetFieldID(cls, "colorName", "Ljava/lang/String;"), env->NewStringUTF("Mavi"));
-        env->SetIntField(obj, env->GetFieldID(cls, "role", "I"), 0);
-        env->SetBooleanField(obj, env->GetFieldID(cls, "isDead", "Z"), JNI_FALSE);
-        env->SetBooleanField(obj, env->GetFieldID(cls, "isImpostor", "Z"), JNI_FALSE);
-        env->SetObjectArrayElement(arr, 0, obj);
-        return arr;
-    }
-
-    // Static field degerini oku
-    void* allPlayersList = nullptr;
-    p_il2cpp_field_static_get_value(allPlayersField, &allPlayersList);
-    LOGD("allPlayersList=%p", allPlayersList);
+    // AllPlayerControls List<PlayerControl>
+    uintptr_t allPlayersList = read<uintptr_t>(staticFields + Off::AllPlayerControls);
+    LOGD("allPlayersList=%p", (void*)allPlayersList);
 
     if (!allPlayersList) {
-        LOGD("allPlayersList is null, returning test");
+        LOGD("allPlayersList null, returning test");
         jobjectArray arr = env->NewObjectArray(1, cls, nullptr);
         jobject obj = env->AllocObject(cls);
         env->SetObjectField(obj, env->GetFieldID(cls, "name", "Ljava/lang/String;"), env->NewStringUTF("Test Player"));
@@ -199,11 +118,10 @@ Java_com_systemhelper_NativeHelper_getPlayerList(JNIEnv* env, jclass) {
         return arr;
     }
 
-    // List size ve items oku
-    uintptr_t listAddr = (uintptr_t)allPlayersList;
-    void* items = read<void*>(listAddr + 0x10);
-    int count = read<int32_t>(listAddr + 0x18);
-    LOGD("list items=%p count=%d", items, count);
+    // List._items ve List._size
+    uintptr_t items = read<uintptr_t>(allPlayersList + 0x10);
+    int count = read<int32_t>(allPlayersList + 0x18);
+    LOGD("list items=%p count=%d", (void*)items, count);
 
     if (!items || count <= 0 || count > 15) {
         LOGD("invalid list, returning test");
@@ -221,31 +139,28 @@ Java_com_systemhelper_NativeHelper_getPlayerList(JNIEnv* env, jclass) {
     jobjectArray arr = env->NewObjectArray(count, cls, nullptr);
 
     for (int i = 0; i < count; i++) {
-        uintptr_t pc = read<uintptr_t>((uintptr_t)items + 0x20 + i * 8);
-        LOGD("player[%d] pc=%p", i, (void*)pc);
+        uintptr_t pc = read<uintptr_t>(items + 0x20 + i * 8);
         if (!pc) continue;
 
-        // PlayerControl.Data (offset 0x38)
-        uintptr_t data = read<uintptr_t>(pc + 0x38);
-        LOGD("player[%d] data=%p", i, (void*)data);
+        // PlayerControl.Data
+        uintptr_t data = read<uintptr_t>(pc + Off::Data);
         if (!data) continue;
 
-        // PlayerName (offset 0x40)
-        uintptr_t namePtr = read<uintptr_t>(data + 0x40);
+        // PlayerName
+        uintptr_t namePtr = read<uintptr_t>(data + Off::PlayerName);
         std::string name = readStr(namePtr);
-        LOGD("player[%d] name=%s", i, name.c_str());
 
-        // RoleType (offset 0x50)
-        int role = read<int>(data + 0x50);
-        LOGD("player[%d] role=%d", i, role);
+        // RoleType
+        int role = read<int>(data + Off::RoleType);
 
-        // IsDead (offset 0x78)
-        bool dead = read<bool>(data + 0x78);
+        // IsDead
+        bool dead = read<bool>(data + Off::IsDead);
 
-        // DefaultOutfit (offset 0x20)
-        uintptr_t outfit = read<uintptr_t>(data + 0x20);
-        int color = outfit ? read<int>(outfit + 0x10) : 0;
-        LOGD("player[%d] color=%d", i, color);
+        // DefaultOutfit -> ColorId
+        uintptr_t outfit = read<uintptr_t>(data + Off::DefaultOutfit);
+        int color = outfit ? read<int>(outfit + Off::ColorId) : 0;
+
+        LOGD("player[%d]: name=%s role=%d color=%d dead=%d", i, name.c_str(), role, color, dead);
 
         jobject obj = env->AllocObject(cls);
         env->SetObjectField(obj, env->GetFieldID(cls, "name", "Ljava/lang/String;"), env->NewStringUTF(name.c_str()));
